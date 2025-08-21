@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Склад — оперативні статуси</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --card: #141a2e;
+      --ring: #24304f;
+      --txt: #e7eefc;
+      --muted: #aab6d3;
+      --accent: #5da9ff;
+    }
+    html,body{height:100%}
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+      color: var(--txt);
+      background: radial-gradient(1200px 600px at 50% -10%, #162040, var(--bg));
+    }
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 24px 16px 40px;
+    }
+    header {
+      display:flex;
+      gap:12px;
+      align-items:center;
+      justify-content:space-between;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+    }
+    .title {
+      font-weight: 700; letter-spacing: .2px;
+      display:flex; gap:10px; align-items:center;
+    }
+    .title span { opacity:.9 }
+    .controls { display:flex; gap:10px; align-items:center; }
+    button {
+      background: var(--accent);
+      color: #06203d;
+      border: none; border-radius: 12px;
+      padding: 10px 14px;
+      font-weight: 600; cursor: pointer;
+      box-shadow: 0 8px 20px rgba(93,169,255,.25);
+    }
+    button:active { transform: translateY(1px); }
+    .stamp { color: var(--muted); font-size: 14px; }
+    .grid {
+      display:grid;
+      grid-template-columns: repeat(3, minmax(220px,1fr));
+      gap: 16px;
+    }
+    @media (max-width: 860px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+    .card {
+      background: linear-gradient(180deg, #141a2e, #11182b);
+      border: 1px solid #1d2540;
+      border-radius: 20px;
+      padding: 16px 16px 8px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+    }
+    .label {
+      text-align:center; margin-bottom: 6px; font-weight: 650;
+      color: #dbe6ff;
+    }
+    .chartBox {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+    }
+    .error {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border: 1px solid #4f1f2a;
+      background: #2a1220;
+      color: #ffd1db;
+      border-radius: 12px;
+      display:none;
+    }
+    footer {
+      margin-top: 18px; color: var(--muted); font-size: 13px;
+      text-align: center; opacity: .85;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="title">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke="#5da9ff" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <span>Склад — оперативні статуси (7 днів)</span>
+      </div>
+      <div class="controls">
+        <div class="stamp" id="stamp">оновлюю…</div>
+        <button id="refreshBtn" type="button">Оновити</button>
+      </div>
+    </header>
+
+    <div class="grid" id="grid">
+      <!-- cards will be injected -->
+    </div>
+
+    <div class="error" id="errorBox"></div>
+    <footer>Автооновлення кожні 60 с • Джерело: n8n webhook</footer>
+  </div>
+
+  <script>
+    // ---- SETTINGS ----------------------------------------------------------
+    const WEBHOOK_URL = "https://n8n.vetai.win/webhook-test/da346a7b-9591-46a4-8bd7-e4b150dea063";
+    // Мапа статусів у потрібному порядку відображення:
+    const STATUS_KEYS = ["Відправлено на склад", "Збирається", "Зібрано"];
+
+    // ---- Chart.js plugin: центроване число --------------------------------
+    const CenterText = {
+      id: 'centerText',
+      afterDatasetsDraw(chart, args, pluginOptions) {
+        const {ctx, chartArea: {width, height}} = chart;
+        const meta = chart.getDatasetMeta(0);
+        if (!meta || !meta.data || !meta.data[0]) return;
+        const x = meta.data[0].x;
+        const y = meta.data[0].y;
+
+        ctx.save();
+        const text = chart.$center || '0';
+        ctx.font = `700 ${Math.max(22, width * 0.12)}px system-ui, -apple-system, Segoe UI, Roboto`;
+        ctx.fillStyle = '#e7eefc';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, x, y);
+
+        // підпис "шт." малим шрифтом
+        ctx.font = `500 ${Math.max(10, width * 0.045)}px system-ui, -apple-system, Segoe UI, Roboto`;
+        ctx.fillStyle = '#aab6d3';
+        ctx.fillText('шт.', x, y + (height * 0.16));
+        ctx.restore();
+      }
+    };
+    Chart.register(CenterText);
+
+    // ---- Створення картки зі статусом -------------------------------------
+    function createCard(statusLabel) {
+      const card = document.createElement('div');
+      card.className = 'card';
+
+      const h = document.createElement('div');
+      h.className = 'label';
+      h.textContent = statusLabel;
+      card.appendChild(h);
+
+      const box = document.createElement('div');
+      box.className = 'chartBox';
+      const canvas = document.createElement('canvas');
+      box.appendChild(canvas);
+      card.appendChild(box);
+
+      // Базовий донат без сегментів (лише кільце)
+      const chart = new Chart(canvas.getContext('2d'), {
+        type: 'doughnut',
+        data: {
+          labels: ['total'],
+          datasets: [{
+            data: [100],                         // просто одне кільце
+            backgroundColor: ['#24304f'],       // колір кільця/треку
+            borderWidth: 0,
+            hoverOffset: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { enabled: false }
+          },
+          cutout: '72%' // розмір "дірки"
+        },
+        plugins: [CenterText]
+      });
+
+      return { card, chart };
+    }
+
+    // ---- Рендер усіх карток у грид ----------------------------------------
+    const grid = document.getElementById('grid');
+    const cards = {};
+    STATUS_KEYS.forEach(k => {
+      const {card, chart} = createCard(k);
+      grid.appendChild(card);
+      cards[k] = chart;
+    });
+
+    // ---- Допоміжні ---------------------------------------------------------
+    const stampEl = document.getElementById('stamp');
+    const errorBox = document.getElementById('errorBox');
+
+    function setStamp(date = new Date()) {
+      const two = n => n.toString().padStart(2, '0');
+      const t = `${two(date.getHours())}:${two(date.getMinutes())}:${two(date.getSeconds())}`;
+      stampEl.textContent = `оновлено о ${t}`;
+    }
+    function showError(msg) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = msg;
+    }
+    function clearError() {
+      errorBox.style.display = 'none';
+      errorBox.textContent = '';
+    }
+
+    function normalizeCounts(obj) {
+      // Витягуємо 3 ключі; значення можуть бути рядками — перетворюємо в числа
+      const result = {};
+      STATUS_KEYS.forEach(k => {
+        let v = obj?.[k];
+        const num = Number(v ?? 0);
+        result[k] = Number.isFinite(num) ? num : 0;
+      });
+      return result;
+    }
+
+    // ---- Завантаження даних ------------------------------------------------
+    async function loadData() {
+      clearError();
+      stampEl.textContent = 'оновлюю…';
+      try {
+        const res = await fetch(WEBHOOK_URL, { method: 'GET' });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: не вдалося отримати дані`);
+        }
+        const data = await res.json(); // очікуємо формат: [{ ... }]
+        const obj = Array.isArray(data) ? data[0] : data;
+        const counts = normalizeCounts(obj);
+
+        // оновлюємо центрові числа
+        STATUS_KEYS.forEach(k => {
+          const chart = cards[k];
+          if (!chart) return;
+          chart.$center = String(counts[k] ?? 0);
+          chart.update();
+        });
+
+        setStamp(new Date());
+      } catch (err) {
+        showError(
+          'Помилка завантаження. Якщо це CORS, додайте Access-Control-Allow-Origin:* у відповіді вебхука n8n. Деталі: ' + (err?.message || err)
+        );
+        setStamp(new Date());
+      }
+    }
+
+    // ---- Ініціалізація -----------------------------------------------------
+    document.getElementById('refreshBtn').addEventListener('click', loadData);
+    loadData();                           // перше завантаження
+    setInterval(loadData, 60_000);        // автооновлення щохвилини
+  </script>
+</body>
+</html>
