@@ -1,330 +1,359 @@
-// === CONFIG ================================================================
-const CONFIG = {
-  // ❗ підставте ваш n8n webhook
-  WEBHOOK_URL: "https://n8n.vetai.win/webhook/da346a7b-9591-46a4-8bd7-e4b150dea063",
+/* ================================ *
+ *   Склад — оперативні статуси     *
+ *   app.js (повна версія)          *
+ * ================================ */
 
-  // Данні для простенької авторизації на клієнті
-  AUTH: { username: "data", password: "30102020" },
+/* ---------- Налаштування ---------- */
 
-  // Робочі години (локальний час браузера)
-  WORK_HOURS: { start: 8, end: 21 }, // 8:00–21:00
+// URL вашого n8n-вебхука
+const WEBHOOK_URL = "https://n8n.vetai.win/webhook/da346a7b-9591-46a4-8bd7-e4b150dea063";
 
-  // Обмеження запитів
-  MIN_FETCH_MS: 60_000,              // не частіше 1/хв
-  AUTO_REFRESH_MS: 300_000           // автооновлення
-};
+// Порядок відображення карток
+const STATUS_KEYS = ["Відправлено на склад", "Збирається", "Зібрано"];
 
-// Порядок статусів і відображувані назви
-const STATUS_ORDER = [
-  { key: "Відправлено на склад", label: "Відправлено на склад" },
-  { key: "Збирається (скл.)", label: "Збирається" },
-  { key: "Зібрано (скл.)", label: "Зібрано" },
-];
+// Робочі години (локальний час браузера)
+const WORK_HOURS = { start: 8, end: 21 }; // від 08:00 до 21:00 (включно початок, виключно кінець)
 
-// Кольори сегментів (легенда зі скріншоту: синій/зелений/червоний)
+// Мінімальний інтервал запитів до бекенда
+const MIN_FETCH_INTERVAL_MS = 60_000; // 1 хвилина
+
+// Кольори для типів доставки (Відправка — синій, Самовивіз — жовтий, Доставка — зелений)
 const COLORS = {
-  "Самовивіз": "#4da3ff",  // blue
-  "Доставка":  "#34c759",  // green
-  "Відправка": "#ff3b30",  // red
+  "Відправка": "#3B82F6",   // blue-500
+  "Самовивіз": "#FACC15",   // yellow-400
+  "Доставка":  "#22C55E",   // green-500
 };
+const LEGEND_ORDER = ["Самовивіз", "Доставка", "Відправка"]; // порядок у легенді та діаграмі
 
-// === STATE / DOM ==========================================================
-const grid = document.getElementById("grid");
-const stampEl = document.getElementById("stamp");
-const errorBox = document.getElementById("errorBox");
-
-const authModal = document.getElementById("authModal");
-const loginInput = document.getElementById("loginInput");
-const passInput  = document.getElementById("passInput");
-const authBtn    = document.getElementById("authBtn");
-const authErr    = document.getElementById("authErr");
-
-// Кеш у пам'яті + localStorage
-let lastFetchedAt = 0;
-let lastData = null;
-
+// Ключі localStorage
 const LS_KEYS = {
-  DATA: "orders.cache.data",
-  STAMP: "orders.cache.stamp",
+  lastData:   "dash.lastData",
+  lastFetch:  "dash.lastFetch",
+  authUser:   "dash.auth.user",
+  authToken:  "dash.auth.token",
 };
 
-// === HELPERS ==============================================================
-function setStamp(date = new Date(), extra = "") {
-  const two = n => n.toString().padStart(2, "0");
+/* ---------- DOM-посилання ---------- */
+const gridEl     = document.getElementById("grid");
+const stampEl    = document.getElementById("stamp");
+const errorBoxEl = document.getElementById("errorBox");
+const refreshBtn = document.getElementById("refreshBtn");
+
+// елементи авторизації (мають бути у вашому HTML)
+const authOverlay = document.getElementById("authOverlay");
+const authForm    = document.getElementById("authForm");
+const authLogin   = document.getElementById("authLogin");
+const authPass    = document.getElementById("authPass");
+
+/* ---------- Стан застосунку ---------- */
+let chartsByStatus = {};              // { "Відправлено на склад": Chart, ... }
+let currentData     = null;           // останні нормалізовані дані
+let isFetching      = false;
+
+/* ---------- Утиліти ---------- */
+const two = (n) => String(n).padStart(2, "0");
+
+function setStamp(date = new Date(), label = "оновлено о") {
   const t = `${two(date.getHours())}:${two(date.getMinutes())}:${two(date.getSeconds())}`;
-  stampEl.textContent = `оновлено о ${t}${extra}`;
+  stampEl.textContent = `${label} ${t}`;
 }
 function showError(msg) {
-  errorBox.style.display = "block";
-  errorBox.textContent = msg;
+  errorBoxEl.style.display = "block";
+  errorBoxEl.textContent = msg;
 }
 function clearError() {
-  errorBox.style.display = "none";
-  errorBox.textContent = "";
+  errorBoxEl.style.display = "none";
+  errorBoxEl.textContent = "";
 }
 function inWorkHours(d = new Date()) {
   const h = d.getHours();
-  return h >= CONFIG.WORK_HOURS.start && h < CONFIG.WORK_HOURS.end;
+  return h >= WORK_HOURS.start && h < WORK_HOURS.end;
 }
-function saveCache(data) {
-  lastData = data;
-  lastFetchedAt = Date.now();
-  localStorage.setItem(LS_KEYS.DATA, JSON.stringify(data));
-  localStorage.setItem(LS_KEYS.STAMP, String(lastFetchedAt));
-}
-function loadCache() {
-  if (lastData) return lastData;
-  const raw = localStorage.getItem(LS_KEYS.DATA);
-  const stamp = Number(localStorage.getItem(LS_KEYS.STAMP) || 0);
-  if (raw) {
-    lastFetchedAt = stamp;
-    try { lastData = JSON.parse(raw); } catch {}
+function nowMs() { return Date.now(); }
+
+/* ---------- Авторизація ---------- */
+// Проста верифікація: логін/пароль вводить користувач; токен шифруємо базово та кладемо у localStorage.
+// Бекенд можна (необов’язково) перевіряти заголовком Authorization: Basic <base64>.
+function ensureAuthUI() {
+  const token = localStorage.getItem(LS_KEYS.authToken);
+  if (token) {
+    authOverlay?.classList.add("hidden");
+    return true;
   }
-  return lastData;
+  authOverlay?.classList.remove("hidden");
+  return false;
 }
 
-// Плагін: великий текст у центрі кола (К/О)
-const CenterText = {
-  id: "centerText",
-  afterDatasetsDraw(chart) {
-    const { ctx, chartArea: { width, height } } = chart;
-    const meta = chart.getDatasetMeta(0);
-    if (!meta || !meta.data || !meta.data[0]) return;
-    const { x, y } = meta.data[0];
-    const text = chart.$center || "0/0"; // "К/О"
+authForm?.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const u = (authLogin?.value || "").trim();
+  const p = (authPass?.value  || "").trim();
+  if (!u || !p) return;
 
-    ctx.save();
-    ctx.font = `700 ${Math.max(20, width * 0.12)}px system-ui, -apple-system, Segoe UI, Roboto`;
-    ctx.fillStyle = "#e7eefc";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(text, x, y);
-    ctx.restore();
-  }
-};
-Chart.register(CenterText);
+  // Успішний логін (клієнтська перевірка). За потреби — зробіть запит до окремого /auth.
+  const token = btoa(`${u}:${p}`);
+  localStorage.setItem(LS_KEYS.authUser, u);
+  localStorage.setItem(LS_KEYS.authToken, token);
 
-// === BUILD UI =============================================================
-function createCard(statusLabel) {
+  // Приховуємо модалку
+  authOverlay?.classList.add("hidden");
+
+  // Перше завантаження після логіну
+  safeLoad();
+});
+
+/* ---------- Підготовка макета карток ---------- */
+function createCard(statusKey) {
+  // контейнер
   const card = document.createElement("div");
   card.className = "card";
 
-  const label = document.createElement("div");
-  label.className = "label";
-  label.innerHTML = `<span class="label__txt">${statusLabel}</span><span class="smallMuted" data-total="0">0 шт.</span>`;
-  card.appendChild(label);
+  // заголовок + total праворуч
+  const head = document.createElement("div");
+  head.className = "cardHead";
+  const title = document.createElement("div");
+  title.className = "label";
+  title.textContent = statusKey;
+  const total = document.createElement("div");
+  total.className = "totalBadge";
+  total.textContent = "0 шт.";
+  head.appendChild(title);
+  head.appendChild(total);
 
+  // кільце
   const box = document.createElement("div");
   box.className = "chartBox";
   const canvas = document.createElement("canvas");
   box.appendChild(canvas);
+
+  // підпис K/O
+  const ko = document.createElement("div");
+  ko.className = "ko";
+  ko.innerHTML = `К: <b>0</b> <span class="dot">•</span> О: <b>0</b>`;
+
+  // легенда
+  const legend = document.createElement("div");
+  legend.className = "legend";
+
+  card.appendChild(head);
   card.appendChild(box);
+  card.appendChild(ko);
+  card.appendChild(legend);
 
-  const badges = document.createElement("div");
-  badges.className = "badges";
-  badges.innerHTML = `<span class="badge" data-k="0">К: 0</span><span class="badge" data-o="0">О: 0</span>`;
-  card.appendChild(badges);
+  gridEl.appendChild(card);
 
-  const leg = document.createElement("div");
-  leg.className = "leg";
-  leg.innerHTML = `
-    <div class="leg__row"><div class="leg__left"><span class="dot dot--blue"></span><span>Самовивіз</span></div><div class="smallMuted" data-leg="Самовивіз">0 (К 0 / О 0)</div></div>
-    <div class="leg__row"><div class="leg__left"><span class="dot dot--green"></span><span>Доставка</span></div><div class="smallMuted" data-leg="Доставка">0 (К 0 / О 0)</div></div>
-    <div class="leg__row"><div class="leg__left"><span class="dot dot--red"></span><span>Відправка</span></div><div class="smallMuted" data-leg="Відправка">0 (К 0 / О 0)</div></div>
-  `;
-  card.appendChild(leg);
-
-  // донат
+  // Порожній графік (діаграма будується при першому оновленні)
   const chart = new Chart(canvas.getContext("2d"), {
     type: "doughnut",
-    data: {
-      labels: ["Самовивіз", "Доставка", "Відправка"],
-      datasets: [{
-        data: [0, 0, 0],
-        backgroundColor: [COLORS["Самовивіз"], COLORS["Доставка"], COLORS["Відправка"]],
-        borderWidth: 0,
-        hoverOffset: 2,
-      }]
-    },
+    data: { labels: [], datasets: [{ data: [], backgroundColor: [], borderWidth: 0 }] },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: { enabled: false } },
-      cutout: "72%"
-    },
-    plugins: [CenterText]
+      cutout: "70%",
+      plugins: { legend: { display: false }, tooltip: { enabled: true } }
+    }
   });
 
-  return { card, chart, label, leg, badges };
+  // зберігаємо хендли для подальшого оновлення
+  return { card, chart, totalEl: total, koEl: ko, legendEl: legend, titleEl: title };
 }
 
-// Створюємо картки
-const cards = {};
-STATUS_ORDER.forEach(({ label }) => {
-  const built = createCard(label);
-  grid.appendChild(built.card);
-  cards[label] = built;
-});
+function mountCards() {
+  chartsByStatus = {};
+  gridEl.innerHTML = "";
+  STATUS_KEYS.forEach((key) => {
+    const parts = createCard(key);
+    chartsByStatus[key] = parts;
+  });
+}
 
-// === DATA SHAPING =========================================================
-function normalize(dataArray) {
-  // очікуємо:
-  // [{ Статус, К:{total,Самовивіз,Доставка,Відправка}, О:{...}, Всього }]
+/* ---------- Нормалізація/парсинг даних ---------- */
+function normalizePayload(raw) {
+  // Очікуємо масив об’єктів з ключами:
+  //  { Статус, Всього, К: { total, Самовивіз, Доставка, Відправка }, О: {...} }
+  const arr = Array.isArray(raw) ? raw : (raw ? [raw] : []);
   const map = new Map();
-  for (const row of dataArray || []) {
-    map.set(row["Статус"], row);
+
+  for (const row of arr) {
+    const status = String(row?.Статус ?? "").trim();
+    if (!status) continue;
+
+    const k = row?.К || {};
+    const o = row?.О || {};
+
+    const safe = (v) => (Number.isFinite(+v) ? +v : 0);
+
+    map.set(status, {
+      Статус: status,
+      Всього: safe(row?.Всього ?? (safe(k.total) + safe(o.total))),
+      К: {
+        total:    safe(k.total),
+        Самовивіз: safe(k["Самовивіз"]),
+        Доставка:  safe(k["Доставка"]),
+        Відправка: safe(k["Відправка"]),
+      },
+      О: {
+        total:    safe(o.total),
+        Самовивіз: safe(o["Самовивіз"]),
+        Доставка:  safe(o["Доставка"]),
+        Відправка: safe(o["Відправка"]),
+      },
+    });
   }
-  return map;
-}
 
-function toDisplayRow(row) {
-  if (!row) return null;
-  const k = row.К || { total: 0, Самовивіз: 0, Доставка: 0, Відправка: 0 };
-  const o = row.О || { total: 0, Самовивіз: 0, Доставка: 0, Відправка: 0 };
-
-  const totals = {
-    "Самовивіз": Number(k["Самовивіз"] || 0) + Number(o["Самовивіз"] || 0),
-    "Доставка":  Number(k["Доставка"]  || 0) + Number(o["Доставка"]  || 0),
-    "Відправка": Number(k["Відправка"] || 0) + Number(o["Відправка"] || 0),
-  };
-  const totalAll = Number(row["Всього"] || 0);
-  const kTotal = Number(k.total || 0);
-  const oTotal = Number(o.total || 0);
-  return { totals, totalAll, k, o };
-}
-
-// малюємо одну картку
-function renderCard(label, row) {
-  const ui = cards[label];
-  if (!ui) return;
-
-  const shaped = toDisplayRow(row) || {
-    totals:{ "Самовивіз":0,"Доставка":0,"Відправка":0 },
-    totalAll:0, k:{total:0}, o:{total:0}
-  };
-
-  // заголовок: назва + загальна кількість
-  ui.label.querySelector('[data-total]').textContent = `${shaped.totalAll} шт.`;
-
-  // бейджі К/О
-  ui.badges.querySelector('[data-k]').textContent = `К: ${shaped.k.total || 0}`;
-  ui.badges.querySelector('[data-o]').textContent = `О: ${shaped.o.total || 0}`;
-
-  // центр: "К/О"
-  ui.chart.$center = `${shaped.k.total || 0}/${shaped.o.total || 0}`;
-
-  // поновити дані графіка
-  ui.chart.data.datasets[0].data = [
-    shaped.totals["Самовивіз"],
-    shaped.totals["Доставка"],
-    shaped.totals["Відправка"],
-  ];
-  ui.chart.update();
-
-  // легенда рядки: "N (К x / О y)"
-  const setLeg = (name, kVal, oVal) => {
-    const el = ui.card.querySelector(`[data-leg="${name}"]`);
-    const total = (Number(kVal)||0) + (Number(oVal)||0);
-    if (el) el.textContent = `${total} (К ${kVal||0} / О ${oVal||0})`;
-  };
-  setLeg("Самовивіз", row.К?.Самовивіз, row.О?.Самовивіз);
-  setLeg("Доставка",  row.К?.Доставка,  row.О?.Доставка);
-  setLeg("Відправка", row.К?.Відправка, row.О?.Відправка);
-}
-
-// малюємо всі
-function renderAll(data) {
-  const map = normalize(data);
-
-  STATUS_ORDER.forEach(({ key, label }) => {
-    renderCard(label, map.get(key));
+  // Повертати у фіксованому порядку й із дефолтами на 0
+  return STATUS_KEYS.map((key) => {
+    if (map.has(key)) return map.get(key);
+    return {
+      Статус: key, Всього: 0,
+      К: { total: 0, Самовивіз: 0, Доставка: 0, Відправка: 0 },
+      О: { total: 0, Самовивіз: 0, Доставка: 0, Відправка: 0 },
+    };
   });
 }
 
-// === AUTH ================================================================
-function isAuthed() {
-  return sessionStorage.getItem("auth-ok") === "1";
+/* ---------- Рендер ---------- */
+function fmtLegendLine(label, K, O) {
+  const total = K + O;
+  return `${label} ${total} (К ${K} / О ${O})`;
 }
-function openAuth() {
-  authModal.setAttribute("aria-hidden", "false");
-  authErr.hidden = true;
-  setTimeout(()=> loginInput.focus(), 0);
-}
-function closeAuth() {
-  authModal.setAttribute("aria-hidden", "true");
-}
-authBtn.addEventListener("click", () => {
-  const u = loginInput.value.trim();
-  const p = passInput.value;
-  if (u === CONFIG.AUTH.username && p === CONFIG.AUTH.password) {
-    sessionStorage.setItem("auth-ok", "1");
-    authErr.hidden = true;
-    closeAuth();
-    // одразу підвантажимо
-    loadData(true);
-  } else {
-    authErr.hidden = false;
-  }
-});
 
-// === FETCH / CACHE =======================================================
-async function fetchData() {
-  const res = await fetch(CONFIG.WEBHOOK_URL, { method: "GET" });
+function updateCard(statusObj) {
+  const parts = chartsByStatus[statusObj.Статус];
+  if (!parts) return;
+
+  // заголовок: праворуч "X шт."
+  parts.totalEl.textContent = `${statusObj.Всього} шт.`;
+
+  // центр К/О
+  parts.koEl.innerHTML = `К: <b>${statusObj.К.total}</b> <span class="dot">•</span> О: <b>${statusObj.О.total}</b>`;
+
+  // дані для діаграми (у визначеному порядку)
+  const labels = [];
+  const data   = [];
+  const colors = [];
+  for (const label of LEGEND_ORDER) {
+    const k = statusObj.К[label] || 0;
+    const o = statusObj.О[label] || 0;
+    const sum = k + o;
+    if (sum > 0) {
+      labels.push(`${label} — ${sum} (К ${k} / О ${o})`);
+      data.push(sum);
+      colors.push(COLORS[label]);
+    }
+  }
+  // якщо усі нулі — малюємо «порожнє» кільце
+  const dataset = parts.chart.data.datasets[0];
+  parts.chart.data.labels = labels;
+  dataset.data = data.length ? data : [1];
+  dataset.backgroundColor = data.length ? colors : ["#23324d"];
+  parts.chart.update();
+
+  // легенда (кастомна)
+  parts.legendEl.innerHTML = "";
+  for (const label of LEGEND_ORDER) {
+    const k = statusObj.К[label] || 0;
+    const o = statusObj.О[label] || 0;
+    const row = document.createElement("div");
+    row.className = "legendRow";
+    row.innerHTML = `
+      <span class="dot" style="background:${COLORS[label]}"></span>
+      <span class="name">${label}</span>
+      <span class="val">${fmtLegendLine("", k, o).trimLeft?.() ?? `${k+o} (К ${k} / О ${o})`}</span>
+    `;
+    // якщо немає цього типу — робимо прозорішим
+    if (k + o === 0) row.classList.add("muted");
+    parts.legendEl.appendChild(row);
+  }
+}
+
+function renderAll(data) {
+  // Підпис у заголовку картки (без "(скл.)")
+  Object.values(chartsByStatus).forEach(({ titleEl }) => {
+    const clean = titleEl.textContent.replace(/\s*\(скл\.\)\s*$/i, "");
+    titleEl.textContent = clean;
+  });
+
+  for (const row of data) updateCard(row);
+}
+
+/* ---------- Завантаження з кешем/обмеженням частоти ---------- */
+async function fetchFromBackend() {
+  const token = localStorage.getItem(LS_KEYS.authToken);
+  const headers = token ? { Authorization: `Basic ${token}` } : {};
+
+  const res = await fetch(WEBHOOK_URL, { method: "GET", headers });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
 async function loadData(force = false) {
-  clearError();
+  // дросель запитів
+  const lastFetch = Number(localStorage.getItem(LS_KEYS.lastFetch) || 0);
+  const tooSoon = nowMs() - lastFetch < MIN_FETCH_INTERVAL_MS;
 
-  // авторизація
-  if (!isAuthed()) {
-    openAuth();
-    return;
+  // поза робочими годинами — не ходимо в бекенд без force
+  const nonWork = !inWorkHours();
+
+  // якщо занадто часто або поза годинами — віддаємо кеш (якщо є)
+  if ((tooSoon || nonWork) && !force) {
+    const cached = localStorage.getItem(LS_KEYS.lastData);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      currentData = normalizePayload(parsed);
+      renderAll(currentData);
+      setStamp(new Date(lastFetch || nowMs()), nonWork ? "останні дані за" : "кеш на");
+      return;
+    }
+    // якщо кеша немає — підемо в бекенд разово
   }
 
-  const now = Date.now();
-  const canFetch = (now - lastFetchedAt) >= CONFIG.MIN_FETCH_MS;
-  const withinWork = inWorkHours();
-
-  // якщо не робочий час — не тягнемо з мережі
-  const shouldFetch = force ? (withinWork && canFetch) : (withinWork && canFetch);
+  if (isFetching) return;
+  isFetching = true;
+  stampEl.textContent = "оновлюю…";
+  clearError();
 
   try {
-    if (shouldFetch) {
-      stampEl.textContent = "оновлюю…";
-      const data = await fetchData();
-      saveCache(data);
-      renderAll(data);
-      setStamp(new Date());
-    } else {
-      // показуємо кеш
-      const cached = loadCache();
-      if (cached) {
-        renderAll(cached);
-        const extra = withinWork ? " (кеш)" : " (поза робочим часом)";
-        const stamp = new Date(Number(localStorage.getItem(LS_KEYS.STAMP) || Date.now()));
-        setStamp(stamp, extra);
-      } else {
-        // якщо кешу немає — все одно спробуємо потягнути
-        const data = await fetchData();
-        saveCache(data);
-        renderAll(data);
-        setStamp(new Date());
-      }
-    }
-  } catch (err) {
-    showError("Помилка завантаження: " + (err?.message || err));
-    const cached = loadCache();
+    const raw = await fetchFromBackend();
+    localStorage.setItem(LS_KEYS.lastFetch, String(nowMs()));
+    localStorage.setItem(LS_KEYS.lastData, JSON.stringify(raw));
+
+    currentData = normalizePayload(raw);
+    renderAll(currentData);
+    setStamp(new Date());
+  } catch (e) {
+    showError(`Помилка завантаження: ${e?.message || e}`);
+    // спробуємо показати кеш, щоб інтерфейс не пустів
+    const cached = localStorage.getItem(LS_KEYS.lastData);
     if (cached) {
-      renderAll(cached);
-      const stamp = new Date(Number(localStorage.getItem(LS_KEYS.STAMP) || Date.now()));
-      setStamp(stamp, " (кеш після помилки)");
+      currentData = normalizePayload(JSON.parse(cached));
+      renderAll(currentData);
+      const ts = Number(localStorage.getItem(LS_KEYS.lastFetch) || nowMs());
+      setStamp(new Date(ts), "кеш на");
+    } else {
+      setStamp(new Date());
     }
+  } finally {
+    isFetching = false;
   }
 }
 
-// === INIT ================================================================
-document.getElementById("refreshBtn").addEventListener("click", () => loadData(false));
-loadData(true);                          // перше завантаження
-setInterval(() => loadData(false), CONFIG.AUTO_REFRESH_MS);
+/* Обгортка, що поважає робочі години і throttling */
+function safeLoad(force = false) {
+  loadData(force);
+}
+
+/* ---------- Ініціалізація UI ---------- */
+function init() {
+  mountCards();
+  ensureAuthUI();          // якщо не авторизовано — покаже модалку
+  if (localStorage.getItem(LS_KEYS.authToken)) safeLoad(true);
+
+  refreshBtn?.addEventListener("click", () => safeLoad(false));
+
+  // автооновлення щохвилини (але loadData всередині все одно бере кеш при потребі)
+  setInterval(() => safeLoad(false), 300_000);
+}
+
+/* ---------- Старт ---------- */
+document.addEventListener("DOMContentLoaded", init);
