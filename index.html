@@ -149,7 +149,7 @@
 
     // 4) Робочі години (локальний час браузера)
     const WORK_FROM = 8,  WORK_TO = 21; // 8:00–21:00
-    const MIN_FETCH_GAP_MS = 300_000;
+    const MIN_FETCH_GAP_MS = 60_000;
 
     // 5) Кольори сегментів
     const COLORS = {
@@ -433,7 +433,7 @@
     // кнопка та автооновлення
     document.getElementById('refreshBtn').addEventListener('click', () => loadData(false));
     if (sessionStorage.getItem('ok') === '1') setTimeout(() => loadData(true), 50);
-    setInterval(() => loadData(false), 60_000); // не частіше 1/хв
+    setInterval(() => loadData(false), 300_000); // не частіше 1/хв
   </script>
 </body>
 </html>
