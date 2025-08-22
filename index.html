@@ -3,17 +3,115 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Склад — статуси опрацювання замовлень</title>
-
-  <!-- Chart.js -->
+  <title>Склад — оперативні статуси</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --card: #141a2e;
+      --ring: #1e2741;
+      --txt: #e7eefc;
+      --muted: #aab6d3;
+      --accent: #5da9ff;
+      /* Кольори сегментів */
+      --col-ship: #2a7fff;   /* Відправка (синій) */
+      --col-pick: #ffd84d;   /* Самовивіз (жовтий) */
+      --col-delv: #32c17a;   /* Доставка (зелений) */
+      --ko-k: #8ec5ff;       /* колір "К" у підписах */
+      --ko-o: #ffc3c3;       /* колір "О" у підписах */
+    }
+    html,body{height:100%}
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Helvetica Neue", Arial, "Noto Sans";
+      color: var(--txt);
+      background: radial-gradient(1200px 600px at 50% -10%, #162040, var(--bg));
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 40px; }
+    header {
+      display:flex; gap:12px; align-items:center; justify-content:space-between;
+      margin-bottom: 18px; flex-wrap: wrap;
+    }
+    .title { font-weight:700; letter-spacing:.2px; display:flex; gap:10px; align-items:center; }
+    .controls { display:flex; gap:10px; align-items:center; }
+    button {
+      background: var(--accent); color:#06203d; border:none; border-radius:12px;
+      padding:10px 14px; font-weight:600; cursor:pointer; box-shadow:0 8px 20px rgba(93,169,255,.25);
+    }
+    button:active { transform: translateY(1px); }
+    .stamp { color: var(--muted); font-size: 14px; display:flex; gap:10px; align-items:center; }
+    .badge { padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid #2a3353; background:#0f1430; color:#c9d6ff; }
+    .grid { display:grid; grid-template-columns: repeat(3, minmax(220px,1fr)); gap: 16px; }
+    @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+    .card {
+      background: linear-gradient(180deg, #141a2e, #11182b);
+      border: 1px solid #1d2540; border-radius: 20px; padding: 16px 16px 10px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+    }
+    .cardHead {
+      display:flex; align-items:center; justify-content:space-between; margin-bottom: 8px;
+    }
+    .label { font-weight: 700; color: #dbe6ff; }
+    .totalTag { color:#9fb3ff; font-weight:650; font-size: 14px; }
+    .chartBox { position: relative; width: 100%; aspect-ratio: 1 / 1; }
 
-  <!-- Styles -->
-  <link rel="stylesheet" href="./style.css" />
+    /* Легенда — формат у один рядок: Назва — N (К x / О y) */
+    .legend { display:flex; flex-direction:column; gap:6px; margin-top:10px; font-size:13px; color:var(--muted); }
+    .lg { display:flex; align-items:center; justify-content:space-between; padding:6px 10px; border:1px solid #212a47; background:#10172c; border-radius:10px; }
+    .lgL { display:flex; align-items:center; gap:8px; }
+    .lgR { display:flex; align-items:center; gap:6px; }
+    .dot { width:10px; height:10px; border-radius:3px; display:inline-block; }
+    .ko { font-weight:650; opacity:.95; }
+    .ko .k { color: var(--ko-k); } .ko .o{ color: var(--ko-o); }
+
+    .error { margin-top: 10px; padding: 10px 12px; border: 1px solid #4f1f2a; background:#2a1220; color:#ffd1db; border-radius: 12px; display:none; }
+
+    /* ---------- Login modal ---------- */
+    .authOverlay {
+      position: fixed; inset: 0; background: rgba(5,10,25,.65);
+      display: grid; place-items: center; backdrop-filter: blur(2px); z-index: 50;
+    }
+    .authCard {
+      width: min(420px, 90vw);
+      background: linear-gradient(180deg, #121729, #0f1526);
+      border: 1px solid #1e2741; border-radius: 18px; padding: 18px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.45);
+      transform: translateY(0); opacity:1; transition: .25s ease;
+    }
+    .authCard.hide { transform: translateY(-8px); opacity:0; }
+    .authTitle { font-weight:800; font-size:20px; margin-bottom:12px; }
+    .fld { display:grid; gap:6px; margin: 10px 0; }
+    .fld label { color:#c8d2f2; font-size:14px; }
+    .fld input {
+      background:#0c1224; border:1px solid #263154; color:#dfe8ff;
+      border-radius:12px; padding:12px; outline:none;
+    }
+    .authErr { color:#ffd1db; background:#2a1220; border:1px solid #4f1f2a; border-radius:12px; padding:8px 10px; display:none; font-size:13px; }
+    .authBtn { width:100%; margin-top: 8px; }
+    .hidden { display:none !important; }
+    footer { margin-top: 18px; color: var(--muted); font-size: 13px; text-align:center; opacity:.85; }
+  </style>
 </head>
 <body>
+  <!-- LOGIN -->
+  <div id="auth" class="authOverlay">
+    <div id="authCard" class="authCard">
+      <div class="authTitle">Вхід</div>
+      <div class="fld">
+        <label for="login">Логін</label>
+        <input id="login" type="text" autocomplete="username" />
+      </div>
+      <div class="fld">
+        <label for="pass">Пароль</label>
+        <input id="pass" type="password" autocomplete="current-password" />
+      </div>
+      <div id="authErr" class="authErr"></div>
+      <button id="authBtn" class="authBtn">Увійти</button>
+    </div>
+  </div>
+
   <div class="wrap">
     <header>
       <div class="title">
@@ -21,33 +119,331 @@
         <span>Склад — опрацювання замовлень (7 днів)</span>
       </div>
       <div class="controls">
-        <div class="stamp" id="stamp">оновлюю…</div>
+        <div class="stamp"><span id="stamp">очікує авторизації…</span><span id="cacheBadge" class="badge hidden">кеш</span></div>
         <button id="refreshBtn" type="button">Оновити</button>
       </div>
     </header>
 
     <div class="grid" id="grid"></div>
-
     <div class="error" id="errorBox"></div>
-    <footer>Оновлення не частіше 1 разу/хв • Робочий час 08:00–21:00 • Джерело: платформа VETAi</footer>
+    <footer>Обмеження запитів: не частіше 1/хв • Робочі години: 08:00–21:00 • Джерело: платформа VETAi</footer>
   </div>
 
-  <!-- Auth modal -->
-  <div class="modal" id="authModal" aria-hidden="true">
-    <div class="modal__card">
-      <div class="modal__title">Вхід</div>
-      <label class="modal__label">Логін
-        <input id="loginInput" class="modal__input" autocomplete="username" />
-      </label>
-      <label class="modal__label">Пароль
-        <input id="passInput" class="modal__input" type="password" autocomplete="current-password" />
-      </label>
-      <button id="authBtn" class="modal__btn">Увійти</button>
-      <div id="authErr" class="modal__err" hidden>Невірний логін або пароль</div>
-    </div>
-  </div>
+  <script>
+    // ===================== CONFIG =====================
+    const WEBHOOK_URL = "https://n8n.vetai.win/webhook/da346a7b-9591-46a4-8bd7-e4b150dea063";
+    const AUTH_USER = "data";
+    const AUTH_PASS = "30102020";
 
-  <!-- App -->
-  <script src="./script.js"></script>
+    const STATUSES = [
+      "Відправлено на склад",
+      "Збирається (скл.)",
+      "Зібрано (скл.)"
+    ];
+    const TITLE_MAP = {
+      "Відправлено на склад": "Відправлено на склад",
+      "Збирається (скл.)": "Збирається",
+      "Зібрано (скл.)": "Зібрано",
+    };
+
+    const WORK_FROM = 8,  WORK_TO = 21; // 8:00–21:00
+    const MIN_FETCH_GAP_MS = 60_000;
+
+    const COLORS = {
+      "Відправка": getComputedStyle(document.documentElement).getPropertyValue('--col-ship').trim(), // синій
+      "Самовивіз": getComputedStyle(document.documentElement).getPropertyValue('--col-pick').trim(), // жовтий
+      "Доставка":  getComputedStyle(document.documentElement).getPropertyValue('--col-delv').trim(), // зелений
+    };
+
+    // =================== CHART PLUGIN ==================
+    const CenterText = {
+      id: 'centerText',
+      afterDatasetsDraw(chart) {
+        const {ctx, chartArea} = chart;
+        if (!chartArea) return;
+        const {width} = chartArea;
+        const meta = chart.getDatasetMeta(0);
+        if (!meta || !meta.data || !meta.data[0]) return;
+        const {x, y} = meta.data[0];
+        ctx.save();
+        ctx.font = `800 ${Math.max(20, width*0.11)}px system-ui, -apple-system, Segoe UI`;
+        ctx.fillStyle = '#e7eefc';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(chart.$center || '0/0', x, y);
+        ctx.restore();
+      }
+    };
+    Chart.register(CenterText);
+
+    // =================== UI HELPERS ====================
+    const grid = document.getElementById('grid');
+    const stampEl = document.getElementById('stamp');
+    const errorBox = document.getElementById('errorBox');
+    const cacheBadge = document.getElementById('cacheBadge');
+
+    function setStamp(date = new Date(), note='') {
+      const two = n => n.toString().padStart(2, '0');
+      const t = `${two(date.getHours())}:${two(date.getMinutes())}:${two(date.getSeconds())}`;
+      stampEl.textContent = `оновлено о ${t}${note ? ` · ${note}` : ''}`;
+    }
+    function showError(msg) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = msg;
+    }
+    function clearError() {
+      errorBox.style.display = 'none';
+      errorBox.textContent = '';
+    }
+    function isWorkingHours(d=new Date()) {
+      const h = d.getHours();
+      return h >= WORK_FROM && h < WORK_TO;
+    }
+
+    // ================ BUILD CARDS/CHARTS ===============
+    const cards = {}; // statusKey -> { el, chart, titleEl, totalEl, legends }
+
+    function createCard(statusKey) {
+      const card = document.createElement('div');
+      card.className = 'card';
+
+      const head = document.createElement('div');
+      head.className = 'cardHead';
+
+      const label = document.createElement('div');
+      label.className = 'label';
+      label.textContent = TITLE_MAP[statusKey] || statusKey;
+
+      const total = document.createElement('div');
+      total.className = 'totalTag';
+      total.textContent = '… шт.';
+
+      head.appendChild(label);
+      head.appendChild(total);
+      card.appendChild(head);
+
+      const box = document.createElement('div'); box.className = 'chartBox';
+      const canvas = document.createElement('canvas'); box.appendChild(canvas);
+      card.appendChild(box);
+
+      // Легенда (однорядкова)
+      const legend = document.createElement('div'); legend.className = 'legend';
+      const mk = (name,color) => {
+        const row = document.createElement('div'); row.className = 'lg';
+        const left = document.createElement('div'); left.className = 'lgL';
+        const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = color;
+        const nm = document.createElement('span'); nm.textContent = name;
+        left.append(dot, nm);
+
+        const right = document.createElement('div'); right.className = 'lgR';
+        const totalEl = document.createElement('span'); totalEl.setAttribute('data-total','');
+        const ko = document.createElement('span'); ko.className = 'ko';
+        ko.innerHTML = `(К <span data-k></span> / О <span data-o></span>)`;
+        right.append(totalEl, ko);
+
+        row.append(left, right);
+        return {
+          el: row,
+          totalEl,
+          kEl: ko.querySelector('[data-k]'),
+          oEl: ko.querySelector('[data-o]')
+        };
+      };
+      const lShip = mk('Відправка', COLORS['Відправка']);   // синій
+      const lPick = mk('Самовивіз', COLORS['Самовивіз']);   // жовтий
+      const lDelv = mk('Доставка',  COLORS['Доставка']);    // зелений
+      legend.append(lShip.el, lPick.el, lDelv.el);
+      card.appendChild(legend);
+
+      const chart = new Chart(canvas.getContext('2d'), {
+        type: 'doughnut',
+        data: {
+          labels: ['Відправка', 'Самовивіз', 'Доставка'],
+          datasets: [{
+            data: [0,0,0],
+            backgroundColor: [COLORS['Відправка'], COLORS['Самовивіз'], COLORS['Доставка']],
+            borderWidth: 0,
+            hoverOffset: 4
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label(ctx) {
+                  const lbl = ctx.label;
+                  const v = ctx.parsed;
+                  return `${lbl}: ${v} шт.`;
+                },
+                afterBody(ctx) {
+                  const c = ctx[0].chart;
+                  const b = c.$breakdown || {};
+                  const key = ctx[0].label;
+                  const ko = b[key] || {K:0,O:0};
+                  return `К/О: ${ko.K}/${ko.O}`;
+                }
+              }
+            }
+          },
+          cutout: '70%'
+        },
+        plugins: [CenterText]
+      });
+
+      return {
+        el: card, chart,
+        titleEl: label, totalEl: total,
+        legends: { ship:lShip, pick:lPick, delv:lDelv }
+      };
+    }
+
+    function mountCards() {
+      grid.innerHTML = '';
+      STATUSES.forEach(s => {
+        const c = createCard(s);
+        grid.appendChild(c.el);
+        cards[s] = c;
+      });
+    }
+    mountCards();
+
+    // ================ AUTH (simple local) ==============
+    const authOverlay = document.getElementById('auth');
+    const authCard   = document.getElementById('authCard');
+    const authBtn    = document.getElementById('authBtn');
+    const authErr    = document.getElementById('authErr');
+    const loginInput = document.getElementById('login');
+    const passInput  = document.getElementById('pass');
+
+    function tryLogin() {
+      const u = loginInput.value.trim();
+      const p = passInput.value;
+      if (u === AUTH_USER && p === AUTH_PASS) {
+        sessionStorage.setItem('ok', '1');
+        authErr.style.display = 'none';
+        authCard.classList.add('hide');
+        setTimeout(() => { authOverlay.classList.add('hidden'); loadData(true); }, 200);
+      } else {
+        authErr.textContent = 'Невірні облікові дані';
+        authErr.style.display = 'block';
+      }
+    }
+    authBtn.addEventListener('click', tryLogin);
+    passInput.addEventListener('keydown', e => { if (e.key === 'Enter') tryLogin(); });
+    if (sessionStorage.getItem('ok') === '1') {
+      authOverlay.classList.add('hidden');
+    } else {
+      setTimeout(() => loginInput.focus(), 150);
+    }
+
+    // ============== FETCH W/ THROTTLING =================
+    let lastFetchAt = 0;
+    let lastData = null;
+
+    function withinThrottle() {
+      return (Date.now() - lastFetchAt) < MIN_FETCH_GAP_MS;
+    }
+
+    function useCacheBadge(on) {
+      cacheBadge.classList.toggle('hidden', !on);
+    }
+
+    function normalize(data) {
+      const map = new Map();
+      for (const r of Array.isArray(data) ? data : []) {
+        map.set(r['Статус'], r);
+      }
+      return map;
+    }
+
+    function render(map) {
+      clearError();
+      STATUSES.forEach(key => {
+        const rec = map.get(key) || {Всього:0, К:{total:0,Самовивіз:0,Доставка:0,Відправка:0}, О:{total:0,Самовивіз:0,Доставка:0,Відправка:0}};
+        const card = cards[key]; if (!card) return;
+
+        // Заголовок: “Назва — N шт.”
+        const total = Number(rec.Всього||0);
+        card.totalEl.textContent = `${total} шт.`;
+
+        // Центр: "К/О"
+        const K = Number(rec.К?.total||0), O = Number(rec.О?.total||0);
+        card.chart.$center = `${K}/${O}`;
+
+        // Дані сегментів: сумарно (К+О)
+        const seg = {
+          'Відправка': (Number(rec.К?.Відправка||0) + Number(rec.О?.Відправка||0)),
+          'Самовивіз': (Number(rec.К?.Самовивіз||0) + Number(rec.О?.Самовивіз||0)),
+          'Доставка':  (Number(rec.К?.Доставка||0)  + Number(rec.О?.Доставка||0)),
+        };
+        card.chart.data.datasets[0].data = [seg['Відправка'], seg['Самовивіз'], seg['Доставка']];
+
+        // Для тултіпів і легенди: розбивка К/О по кожному типу
+        const breakdown = {
+          'Відправка': { K: Number(rec.К?.Відправка||0), O: Number(rec.О?.Відправка||0), T: seg['Відправка'] },
+          'Самовивіз': { K: Number(rec.К?.Самовивіз||0), O: Number(rec.О?.Самовивіз||0), T: seg['Самовивіз'] },
+          'Доставка':  { K: Number(rec.К?.Доставка||0),  O: Number(rec.О?.Доставка||0),  T: seg['Доставка']  },
+        };
+        card.chart.$breakdown = breakdown;
+
+        // Оновлення легенди у форматі: N (К x / О y)
+        card.legends.ship.totalEl.textContent = breakdown['Відправка'].T;
+        card.legends.ship.kEl.textContent     = breakdown['Відправка'].K;
+        card.legends.ship.oEl.textContent     = breakdown['Відправка'].O;
+
+        card.legends.pick.totalEl.textContent = breakdown['Самовивіз'].T;
+        card.legends.pick.kEl.textContent     = breakdown['Самовивіз'].K;
+        card.legends.pick.oEl.textContent     = breakdown['Самовивіз'].O;
+
+        card.legends.delv.totalEl.textContent = breakdown['Доставка'].T;
+        card.legends.delv.kEl.textContent     = breakdown['Доставка'].K;
+        card.legends.delv.oEl.textContent     = breakdown['Доставка'].O;
+
+        card.chart.update();
+      });
+      setStamp(new Date(), useCacheBadge.isCache ? 'кеш' : '');
+      useCacheBadge.isCache = false;
+    }
+
+    async function fetchData() {
+      const res = await fetch(WEBHOOK_URL, { method: 'GET' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    }
+
+    async function loadData(force=false) {
+      if (!isWorkingHours() && lastData) {
+        useCacheBadge(true); useCacheBadge.isCache = true;
+        render(normalize(lastData));
+        return;
+      }
+      if (!force && withinThrottle() && lastData) {
+        useCacheBadge(true); useCacheBadge.isCache = true;
+        render(normalize(lastData));
+        return;
+      }
+      try {
+        stampEl.textContent = 'оновлюю…';
+        const data = await fetchData();
+        lastFetchAt = Date.now();
+        lastData = data;
+        useCacheBadge(false); useCacheBadge.isCache = false;
+        render(normalize(data));
+      } catch (err) {
+        if (lastData) {
+          useCacheBadge(true); useCacheBadge.isCache = true;
+          render(normalize(lastData));
+        }
+        showError('Не вдалося отримати дані. ' + (err?.message || err));
+      }
+    }
+
+    // кнопка та автооновлення
+    document.getElementById('refreshBtn').addEventListener('click', () => loadData(false));
+    if (sessionStorage.getItem('ok') === '1') setTimeout(() => loadData(true), 50);
+    setInterval(() => loadData(false), 300_000); // не частіше 1/хв
+  </script>
 </body>
 </html>
