@@ -96,7 +96,7 @@
     <header>
       <div class="title">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke="#5da9ff" stroke-width="1.6" stroke-linecap="round"/></svg>
-        <span>Склад — оперативні статуси (7 днів)</span>
+        <span>Склад — опрацювання замовлень (7 днів)</span>
       </div>
       <div class="controls">
         <div class="stamp" id="stamp">оновлюю…</div>
@@ -109,7 +109,7 @@
     </div>
 
     <div class="error" id="errorBox"></div>
-    <footer>Автооновлення кожні 60 с • Джерело: n8n webhook</footer>
+    <footer>Автооновлення кожні 300 с • Джерело: n8n webhook</footer>
   </div>
 
   <script>
@@ -259,7 +259,7 @@
     // ---- Ініціалізація -----------------------------------------------------
     document.getElementById('refreshBtn').addEventListener('click', loadData);
     loadData();                           // перше завантаження
-    setInterval(loadData, 60_000);        // автооновлення щохвилини
+    setInterval(loadData, 300_000);        // автооновлення щохвилини
   </script>
 </body>
 </html>
