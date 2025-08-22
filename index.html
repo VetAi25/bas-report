@@ -8,258 +8,227 @@
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <style>
-    :root {
-      --bg: #0b1020;
-      --card: #141a2e;
-      --ring: #24304f;
-      --txt: #e7eefc;
-      --muted: #aab6d3;
-      --accent: #5da9ff;
+    :root{
+      --bg:#0b1020;--card:#141a2e;--ring:#24304f;--txt:#e7eefc;--muted:#aab6d3;--accent:#5da9ff;
+      --blue:#3b82f6; /* Самовивіз */
+      --green:#22c55e;/* Доставка  */
+      --red:#ef4444;  /* Відправка */
     }
     html,body{height:100%}
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
-      color: var(--txt);
-      background: radial-gradient(1200px 600px at 50% -10%, #162040, var(--bg));
-    }
-    .wrap {
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 24px 16px 40px;
-    }
-    header {
-      display:flex;
-      gap:12px;
-      align-items:center;
-      justify-content:space-between;
-      margin-bottom: 18px;
-      flex-wrap: wrap;
-    }
-    .title {
-      font-weight: 700; letter-spacing: .2px;
-      display:flex; gap:10px; align-items:center;
-    }
-    .title span { opacity:.9 }
-    .controls { display:flex; gap:10px; align-items:center; }
-    button {
-      background: var(--accent);
-      color: #06203d;
-      border: none; border-radius: 12px;
-      padding: 10px 14px;
-      font-weight: 600; cursor: pointer;
-      box-shadow: 0 8px 20px rgba(93,169,255,.25);
-    }
-    button:active { transform: translateY(1px); }
-    .stamp { color: var(--muted); font-size: 14px; }
-    .grid {
-      display:grid;
-      grid-template-columns: repeat(3, minmax(220px,1fr));
-      gap: 16px;
-    }
-    @media (max-width: 860px) {
-      .grid { grid-template-columns: 1fr; }
-    }
-    .card {
-      background: linear-gradient(180deg, #141a2e, #11182b);
-      border: 1px solid #1d2540;
-      border-radius: 20px;
-      padding: 16px 16px 8px;
-      box-shadow: 0 10px 30px rgba(0,0,0,.25);
-    }
-    .label {
-      text-align:center; margin-bottom: 6px; font-weight: 650;
-      color: #dbe6ff;
-    }
-    .chartBox {
-      position: relative;
-      width: 100%;
-      aspect-ratio: 1 / 1;
-    }
-    .error {
-      margin-top: 10px;
-      padding: 10px 12px;
-      border: 1px solid #4f1f2a;
-      background: #2a1220;
-      color: #ffd1db;
-      border-radius: 12px;
-      display:none;
-    }
-    footer {
-      margin-top: 18px; color: var(--muted); font-size: 13px;
-      text-align: center; opacity: .85;
-    }
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial,"Noto Sans","Apple Color Emoji","Segoe UI Emoji";color:var(--txt);
+      background:radial-gradient(1200px 600px at 50% -10%, #162040, var(--bg));}
+    .wrap{max-width:1100px;margin:0 auto;padding:24px 16px 40px;}
+    header{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;}
+    .title{font-weight:700;letter-spacing:.2px;display:flex;gap:10px;align-items:center;}
+    .controls{display:flex;gap:10px;align-items:center}
+    button{background:var(--accent);color:#06203d;border:none;border-radius:12px;padding:10px 14px;font-weight:600;cursor:pointer;
+      box-shadow:0 8px 20px rgba(93,169,255,.25)}
+    button:active{transform:translateY(1px)}
+    .stamp{color:var(--muted);font-size:14px}
+    .grid{display:grid;grid-template-columns:repeat(3,minmax(220px,1fr));gap:16px}
+    @media (max-width:860px){.grid{grid-template-columns:1fr}}
+    .card{background:linear-gradient(180deg,#141a2e,#11182b);border:1px solid #1d2540;border-radius:20px;padding:16px 16px 10px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+    .label{text-align:center;margin-bottom:6px;font-weight:650;color:#dbe6ff}
+    .chartBox{position:relative;width:100%;aspect-ratio:1/1}
+    .legend{margin-top:10px;font-size:13px;color:var(--muted)}
+    .legend-row{display:flex;justify-content:space-between;gap:10px;padding:6px 8px;border-radius:10px;background:#0f1527;border:1px solid #1a2340}
+    .legend-row+.legend-row{margin-top:6px}
+    .legend-left{display:flex;align-items:center;gap:8px}
+    .dot{width:10px;height:10px;border-radius:50%}
+    .error{margin-top:10px;padding:10px 12px;border:1px solid #4f1f2a;background:#2a1220;color:#ffd1db;border-radius:12px;display:none}
+    footer{margin-top:18px;color:var(--muted);font-size:13px;text-align:center;opacity:.85}
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <header>
-      <div class="title">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke="#5da9ff" stroke-width="1.6" stroke-linecap="round"/></svg>
-        <span>Склад — опрацювання замовлень (7 днів)</span>
-      </div>
-      <div class="controls">
-        <div class="stamp" id="stamp">оновлюю…</div>
-        <button id="refreshBtn" type="button">Оновити</button>
-      </div>
-    </header>
-
-    <div class="grid" id="grid">
-      <!-- cards will be injected -->
+<div class="wrap">
+  <header>
+    <div class="title">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke="#5da9ff" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <span>Склад — опрацювання замовлень (7 днів)</span>
     </div>
+    <div class="controls">
+      <div class="stamp" id="stamp">оновлюю…</div>
+      <button id="refreshBtn" type="button">Оновити</button>
+    </div>
+  </header>
 
-    <div class="error" id="errorBox"></div>
-    <footer>Автооновлення кожні 300 с • Джерело: n8n webhook</footer>
-  </div>
+  <div class="grid" id="grid"></div>
+  <div class="error" id="errorBox"></div>
+  <footer>Автооновлення кожні 300 с • Джерело: n8n webhook</footer>
+</div>
 
-  <script>
-    // ---- SETTINGS ----------------------------------------------------------
-    const WEBHOOK_URL = "https://n8n.vetai.win/webhook/da346a7b-9591-46a4-8bd7-e4b150dea063";
-    // Мапа статусів у потрібному порядку відображення:
-    const STATUS_KEYS = ["Відправлено на склад", "Збирається", "Зібрано"];
+<script>
+  // ---- SETTINGS ------------------------------------------------------------
+  const WEBHOOK_URL = "https://n8n.vetai.win/webhook/da346a7b-9591-46a4-8bd7-e4b150dea063";
+  const STATUS_KEYS = ["Відправлено на склад","Збирається (скл.)","Зібрано (скл.)"];
+  const COLORS = {
+    "Самовивіз": getComputedStyle(document.documentElement).getPropertyValue('--blue').trim() || '#3b82f6',
+    "Доставка":  getComputedStyle(document.documentElement).getPropertyValue('--green').trim()|| '#22c55e',
+    "Відправка": getComputedStyle(document.documentElement).getPropertyValue('--red').trim()  || '#ef4444',
+  };
 
-    // ---- Chart.js plugin: центроване число --------------------------------
-    const CenterText = {
-      id: 'centerText',
-      afterDatasetsDraw(chart, args, pluginOptions) {
-        const {ctx, chartArea: {width, height}} = chart;
-        const meta = chart.getDatasetMeta(0);
-        if (!meta || !meta.data || !meta.data[0]) return;
-        const x = meta.data[0].x;
-        const y = meta.data[0].y;
+  // ---- Chart.js plugin: “К/О” у центрі ------------------------------------
+  const CenterKO = {
+    id: 'centerKO',
+    afterDatasetsDraw(chart, args, pluginOptions) {
+      const {ctx, chartArea:{width, height}} = chart;
+      const meta = chart.getDatasetMeta(0);
+      if (!meta || !meta.data || !meta.data[0]) return;
+      const {x,y} = meta.data[0];
 
-        ctx.save();
-        const text = chart.$center || '0';
-        ctx.font = `700 ${Math.max(22, width * 0.12)}px system-ui, -apple-system, Segoe UI, Roboto`;
-        ctx.fillStyle = '#e7eefc';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(text, x, y);
+      ctx.save();
+      const text = chart.$centerKO || '0/0';          // "К/О"
+      ctx.font = `700 ${Math.max(22, width*0.12)}px system-ui,-apple-system,Segoe UI,Roboto`;
+      ctx.fillStyle = '#e7eefc';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, x, y);
 
-        // підпис "шт." малим шрифтом
-        ctx.font = `500 ${Math.max(10, width * 0.045)}px system-ui, -apple-system, Segoe UI, Roboto`;
-        ctx.fillStyle = '#aab6d3';
-        ctx.fillText('шт.', x, y + (height * 0.16));
-        ctx.restore();
-      }
-    };
-    Chart.register(CenterText);
-
-    // ---- Створення картки зі статусом -------------------------------------
-    function createCard(statusLabel) {
-      const card = document.createElement('div');
-      card.className = 'card';
-
-      const h = document.createElement('div');
-      h.className = 'label';
-      h.textContent = statusLabel;
-      card.appendChild(h);
-
-      const box = document.createElement('div');
-      box.className = 'chartBox';
-      const canvas = document.createElement('canvas');
-      box.appendChild(canvas);
-      card.appendChild(box);
-
-      // Базовий донат без сегментів (лише кільце)
-      const chart = new Chart(canvas.getContext('2d'), {
-        type: 'doughnut',
-        data: {
-          labels: ['total'],
-          datasets: [{
-            data: [100],                         // просто одне кільце
-            backgroundColor: ['#24304f'],       // колір кільця/треку
-            borderWidth: 0,
-            hoverOffset: 0
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false },
-            tooltip: { enabled: false }
-          },
-          cutout: '72%' // розмір "дірки"
-        },
-        plugins: [CenterText]
-      });
-
-      return { card, chart };
+      ctx.font = `600 ${Math.max(10, width*0.045)}px system-ui,-apple-system,Segoe UI,Roboto`;
+      ctx.fillStyle = '#aab6d3';
+      ctx.fillText('К / О', x, y + (height*0.16));
+      ctx.restore();
     }
+  };
+  Chart.register(CenterKO);
 
-    // ---- Рендер усіх карток у грид ----------------------------------------
-    const grid = document.getElementById('grid');
-    const cards = {};
-    STATUS_KEYS.forEach(k => {
-      const {card, chart} = createCard(k);
-      grid.appendChild(card);
-      cards[k] = chart;
+  // ---- DOM helpers ---------------------------------------------------------
+  const grid = document.getElementById('grid');
+  const stampEl = document.getElementById('stamp');
+  const errorBox = document.getElementById('errorBox');
+
+  function setStamp(d=new Date()){
+    const two=n=>String(n).padStart(2,'0');
+    stampEl.textContent=`оновлено о ${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
+  }
+  function showError(msg){ errorBox.style.display='block'; errorBox.textContent=msg; }
+  function clearError(){ errorBox.style.display='none'; errorBox.textContent=''; }
+
+  // ---- Карточка статусу ----------------------------------------------------
+  function createCard(title){
+    const card = document.createElement('div'); card.className='card';
+    const h = document.createElement('div'); h.className='label'; h.textContent=title; card.appendChild(h);
+
+    const box = document.createElement('div'); box.className='chartBox';
+    const canvas = document.createElement('canvas'); box.appendChild(canvas);
+    card.appendChild(box);
+
+    const legend = document.createElement('div'); legend.className='legend'; card.appendChild(legend);
+
+    const chart = new Chart(canvas.getContext('2d'), {
+      type:'doughnut',
+      data:{ labels: ["Самовивіз","Доставка","Відправка"], datasets:[{ data:[0,0,0], backgroundColor:[COLORS["Самовивіз"],COLORS["Доставка"],COLORS["Відправка"]], borderWidth:0, hoverOffset:6 }] },
+      options:{
+        responsive:true, maintainAspectRatio:false, cutout:'72%',
+        plugins:{
+          legend:{ display:false },
+          tooltip:{
+            enabled:true,
+            callbacks:{
+              label:(ctx)=>{
+                const lbl = ctx.label;
+                const breakdown = chart.$breakdown?.[lbl] || {K:0,O:0};
+                const total = breakdown.K + breakdown.O;
+                return `${lbl}: ${total} (К ${breakdown.K} / О ${breakdown.O})`;
+              }
+            }
+          }
+        }
+      },
+      plugins:[CenterKO]
     });
 
-    // ---- Допоміжні ---------------------------------------------------------
-    const stampEl = document.getElementById('stamp');
-    const errorBox = document.getElementById('errorBox');
+    return {card, chart, legend};
+  }
 
-    function setStamp(date = new Date()) {
-      const two = n => n.toString().padStart(2, '0');
-      const t = `${two(date.getHours())}:${two(date.getMinutes())}:${two(date.getSeconds())}`;
-      stampEl.textContent = `оновлено о ${t}`;
-    }
-    function showError(msg) {
-      errorBox.style.display = 'block';
-      errorBox.textContent = msg;
-    }
-    function clearError() {
-      errorBox.style.display = 'none';
-      errorBox.textContent = '';
-    }
+  // ініціалізуємо картки по черзі Status Keys
+  const cards = {};
+  STATUS_KEYS.forEach(k=>{
+    const c = createCard(k);
+    grid.appendChild(c.card);
+    cards[k]=c;
+  });
 
-    function normalizeCounts(obj) {
-      // Витягуємо 3 ключі; значення можуть бути рядками — перетворюємо в числа
-      const result = {};
-      STATUS_KEYS.forEach(k => {
-        let v = obj?.[k];
-        const num = Number(v ?? 0);
-        result[k] = Number.isFinite(num) ? num : 0;
-      });
-      return result;
-    }
+  // ---- Обробка даних з n8n -------------------------------------------------
+  function normalizeStatusItem(it){
+    // очікуємо структуру:
+    // { Статус, Всього, К:{total,Самовивіз,Доставка,Відправка}, О:{...} }
+    const K = it["К"] || {total:0,"Самовивіз":0,"Доставка":0,"Відправка":0};
+    const O = it["О"] || {total:0,"Самовивіз":0,"Доставка":0,"Відправка":0};
+    const center = `${Number(K.total||0)}/${Number(O.total||0)}`;
 
-    // ---- Завантаження даних ------------------------------------------------
-    async function loadData() {
-      clearError();
-      stampEl.textContent = 'оновлюю…';
-      try {
-        const res = await fetch(WEBHOOK_URL, { method: 'GET' });
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}: не вдалося отримати дані`);
+    const segs = [
+      { key:"Самовивіз", total: Number(K["Самовивіз"]||0) + Number(O["Самовивіз"]||0), K:Number(K["Самовивіз"]||0), O:Number(O["Самовивіз"]||0) },
+      { key:"Доставка",  total: Number(K["Доставка"]||0)  + Number(O["Доставка"]||0),  K:Number(K["Доставка"]||0),  O:Number(O["Доставка"]||0)  },
+      { key:"Відправка", total: Number(K["Відправка"]||0) + Number(O["Відправка"]||0), K:Number(K["Відправка"]||0), O:Number(O["Відправка"]||0) },
+    ];
+    return {center, segs};
+  }
+
+  function renderLegend(el, segs){
+    el.innerHTML = '';
+    segs.forEach(s=>{
+      const row = document.createElement('div'); row.className='legend-row';
+      const left = document.createElement('div'); left.className='legend-left';
+      const dot = document.createElement('span'); dot.className='dot'; dot.style.background = COLORS[s.key];
+      const label = document.createElement('span'); label.textContent = s.key;
+      left.append(dot,label);
+
+      const right = document.createElement('div');
+      right.textContent = `${s.total} (К ${s.K} / О ${s.O})`;
+
+      row.append(left,right);
+      el.appendChild(row);
+    });
+  }
+
+  // ---- Завантаження --------------------------------------------------------
+  async function loadData(){
+    clearError(); stampEl.textContent='оновлюю…';
+    try{
+      const res = await fetch(WEBHOOK_URL, {method:'GET'});
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      const arr = await res.json();                 // масив статусів
+      const byStatus = new Map(arr.map(x => [x["Статус"], x]));
+
+      STATUS_KEYS.forEach(key=>{
+        const raw = byStatus.get(key) || null;
+        const card = cards[key]; if(!card) return;
+
+        if(!raw){
+          // немає такого статусу у відповіді — обнуляємо
+          card.chart.data.datasets[0].data = [0,0,0];
+          card.chart.$centerKO = '0/0';
+          card.chart.$breakdown = {
+            "Самовивіз": {K:0,O:0}, "Доставка": {K:0,O:0}, "Відправка": {K:0,O:0},
+          };
+          renderLegend(card.legend, [
+            {key:"Самовивіз", total:0, K:0, O:0},
+            {key:"Доставка",  total:0, K:0, O:0},
+            {key:"Відправка", total:0, K:0, O:0},
+          ]);
+          card.chart.update();
+          return;
         }
-        const data = await res.json(); // очікуємо формат: [{ ... }]
-        const obj = Array.isArray(data) ? data[0] : data;
-        const counts = normalizeCounts(obj);
 
-        // оновлюємо центрові числа
-        STATUS_KEYS.forEach(k => {
-          const chart = cards[k];
-          if (!chart) return;
-          chart.$center = String(counts[k] ?? 0);
-          chart.update();
-        });
+        const {center, segs} = normalizeStatusItem(raw);
+        card.chart.data.datasets[0].data = segs.map(s=>s.total);
+        card.chart.$centerKO = center;
+        card.chart.$breakdown = Object.fromEntries(segs.map(s=>[s.key,{K:s.K,O:s.O}]));
+        renderLegend(card.legend, segs);
+        card.chart.update();
+      });
 
-        setStamp(new Date());
-      } catch (err) {
-        showError(
-          'Помилка завантаження. Якщо це CORS, додайте Access-Control-Allow-Origin:* у відповіді вебхука n8n. Деталі: ' + (err?.message || err)
-        );
-        setStamp(new Date());
-      }
+      setStamp(new Date());
+    }catch(err){
+      showError('Не вдалося отримати дані. Можливий CORS — додайте Access-Control-Allow-Origin:* у відповіді n8n. Деталі: '+(err?.message||err));
+      setStamp(new Date());
     }
+  }
 
-    // ---- Ініціалізація -----------------------------------------------------
-    document.getElementById('refreshBtn').addEventListener('click', loadData);
-    loadData();                           // перше завантаження
-    setInterval(loadData, 300_000);        // автооновлення щохвилини
-  </script>
+  document.getElementById('refreshBtn').addEventListener('click', loadData);
+  loadData();
+  setInterval(loadData, 300_000); // 300 с = 5 хв
+</script>
 </body>
 </html>
